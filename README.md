@@ -1,8 +1,63 @@
 # SecureTransaction API
 
-Production-grade fraud detection API built with FastAPI, following Hexagonal Architecture and Domain-Driven Design principles.
+**Machine Learning Fraud Detection System** - A production-grade machine learning API for real-time transaction fraud detection, built with FastAPI, XGBoost, and Hexagonal Architecture.
 
-## Features
+## What is this?
+
+SecureTransaction API is a **machine learning-based fraud detection system** that uses **supervised learning** to automatically assess the risk of financial transactions in real-time. The system leverages **XGBoost**, a powerful gradient boosting algorithm, to analyze transaction patterns and predict fraudulent activity.
+
+### Use Case
+
+This API is designed for:
+- **Payment processors** needing real-time fraud screening
+- **E-commerce platforms** protecting against fraudulent transactions
+- **Financial services** requiring automated risk assessment
+- **Fintech applications** implementing fraud prevention systems
+
+**How it works:**
+1. A transaction request is submitted to the API
+2. The **ML model** analyzes transaction features (amount, time, metadata)
+3. The system calculates a **risk score** (0.0 to 1.0) using the trained model
+4. Additional business rules enhance the risk assessment
+5. A decision is made: **APPROVE**, **REVIEW**, or **BLOCK**
+6. All decisions are stored for audit and historical analysis
+
+## Machine Learning Model
+
+The fraud detection system uses **XGBoost** (Extreme Gradient Boosting), a state-of-the-art machine learning algorithm for supervised learning. The model is trained on historical transaction data to learn patterns that indicate fraudulent behavior.
+
+### Model Architecture
+
+- **Algorithm:** XGBoost (Extreme Gradient Boosting)
+- **Type:** Supervised learning classifier
+- **Output:** Probability score (0.0 = low risk, 1.0 = high risk)
+- **Features Analyzed:**
+  - Transaction amount
+  - Time of day and day of week
+  - User and merchant information
+  - Metadata (IP address, device ID, location, payment method)
+- **Decision Logic:** 
+  - Risk < 0.3 → **APPROVE**
+  - Risk 0.3-0.7 → **REVIEW** (manual inspection)
+  - Risk > 0.7 → **BLOCK** (high fraud probability)
+
+The model can be retrained with new data to improve accuracy over time.
+
+### Training Dataset
+
+The model is trained on the **Credit Card Fraud Detection** dataset from Kaggle:
+
+- **Source:** [Kaggle - Credit Card Fraud Detection](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
+- **Size:** 284,807 transactions (492 fraudulent, ~0.17% fraud rate)
+- **Features:** 28 PCA-transformed features + amount + time
+- **Format:** CSV
+- **Note:** Features are anonymized via PCA for privacy protection
+
+The training script automatically downloads this dataset using `kagglehub` if available, or falls back to synthetic data for development purposes.
+
+## Codebase Features
+
+Key technical features and architectural patterns used in this codebase:
 
 - **Hexagonal Architecture** with strict dependency inversion
 - **Domain-Driven Design** with rich domain models
@@ -10,18 +65,6 @@ Production-grade fraud detection API built with FastAPI, following Hexagonal Arc
 - **XGBoost/LightGBM** ML model integration for fraud detection
 - **PostgreSQL** database with async SQLAlchemy
 - **Health checks** with dependency monitoring
-
-## Dataset
-
-The model is trained on the **Credit Card Fraud Detection** dataset from Kaggle:
-
-- **Source:** [Kaggle - Credit Card Fraud Detection](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
-- **Size:** 284,807 transactions (492 fraudulent)
-- **Features:** 28 PCA-transformed features + amount + time
-- **Format:** CSV
-- **Note:** Features are anonymized via PCA for privacy
-
-The training script automatically downloads this dataset using `kagglehub` if available, or falls back to synthetic data for development.
 
 ## Quick Start
 
@@ -55,6 +98,8 @@ This creates a trained XGBoost model at `app/adapters/outbound/ml/models/model.p
 
 The script will automatically use the Kaggle Credit Card Fraud Detection dataset if `creditcard.csv` is present in the project root, or falls back to synthetic data for development.
 
+**Note:** The ML model must be trained before the API can make fraud predictions. The training process typically takes a few minutes depending on your hardware.
+
 5. Create the database tables:
 
 6. Start the server:
@@ -66,10 +111,43 @@ The API will be available at `http://localhost:8000`
 
 ## API Endpoints
 
-- `POST /assess-fraud` - Assess fraud risk for a transaction
-- `GET /fraud-decisions/{transaction_id}` - Get fraud decision by transaction ID
-- `GET /fraud-decisions/user/{user_id}` - Get fraud history for a user
-- `GET /health` - Health check with dependency status
+### Fraud Assessment (ML Prediction)
+
+**`POST /assess-fraud`** - Assess fraud risk for a transaction using machine learning
+
+This endpoint uses the trained ML model to predict fraud probability in real-time.
+
+**Example Request:**
+```json
+{
+  "user_id": "user_12345",
+  "merchant_id": "merchant_abc",
+  "amount": 150.00,
+  "timestamp": "2024-01-15T14:30:00Z",
+  "metadata": {
+    "ip_address": "192.168.1.1",
+    "device_id": "device_xyz",
+    "location": "US",
+    "payment_method": "credit_card"
+  }
+}
+```
+
+**Example Response:**
+```json
+{
+  "transaction_id": "550e8400-e29b-41d4-a716-446655440000",
+  "risk_score": 0.23,
+  "decision": "approve",
+  "timestamp": "2024-01-15T14:30:01Z"
+}
+```
+
+### Other Endpoints
+
+- `GET /fraud-decisions/{transaction_id}` - Retrieve fraud decision by transaction ID
+- `GET /fraud-decisions/user/{user_id}` - Get fraud history for a user (all past decisions)
+- `GET /health` - Health check with dependency status (database, ML model)
 - `GET /docs` - Interactive API documentation (Swagger UI)
 
 ## Project Structure
@@ -97,6 +175,49 @@ scripts/
 └── train_model.py             # ML model training script
 ```
 
+## How Machine Learning is Used
+
+### Real-Time Fraud Detection Workflow
+
+1. **Transaction Submission**
+   - Client sends transaction data via REST API
+   - System validates input and creates domain entities
+
+2. **Feature Extraction**
+   - Transaction data is transformed into ML model features:
+     - Transaction amount (normalized)
+     - Time-based features (hour, day of week)
+     - Metadata indicators (IP presence, device ID, etc.)
+
+3. **ML Model Prediction**
+   - XGBoost model processes features
+   - Returns fraud probability score (0.0 - 1.0)
+   - Prediction runs asynchronously for performance
+
+4. **Risk Assessment**
+   - ML score is combined with business rules:
+     - High-value transactions (>$10,000) increase risk
+     - Off-hours transactions (2 AM - 6 AM) increase risk
+   - Final risk score is calculated
+
+5. **Decision Making**
+   - Risk score determines action:
+     - **APPROVE**: Low risk, transaction proceeds
+     - **REVIEW**: Medium risk, requires manual review
+     - **BLOCK**: High risk, transaction rejected
+
+6. **Persistence**
+   - Transaction and decision are stored in PostgreSQL
+   - Enables audit trails and historical analysis
+   - Supports model retraining with new data
+
+### Model Performance
+
+The XGBoost model is evaluated using standard ML metrics:
+- **ROC-AUC Score**: Measures model's ability to distinguish fraud from legitimate transactions
+- **Classification Report**: Precision, recall, and F1-score for fraud detection
+- Model performance is displayed during training
+
 ## Architecture
 
 The system follows **Hexagonal Architecture** (Ports and Adapters):
@@ -105,6 +226,8 @@ The system follows **Hexagonal Architecture** (Ports and Adapters):
 - **Application Layer**: Use cases orchestrate domain logic
 - **Adapters**: Inbound (HTTP) and outbound (DB, ML) adapters
 - **Composition**: Dependency wiring and application startup
+
+The ML model is integrated as an **outbound adapter**, keeping the domain layer clean and allowing easy model swapping or updates.
 
 ## Database Schema
 
